@@ -1,0 +1,1 @@
+{"version":3,"file":"readICCProfile.d.ts","sourceRoot":"","sources":["../../../src/sections/ImageResource/readICCProfile.ts"],"names":[],"mappings":"AAIA,OAAO,EAAC,uBAAuB,EAAC,MAAM,kBAAkB,CAAC;AACzD,OAAO,EAAC,MAAM,EAAC,MAAM,aAAa,CAAC;AAEnC,wBAAgB,cAAc,CAC5B,MAAM,EAAE,MAAM,EACd,cAAc,EAAE,MAAM,GACrB,uBAAuB,CAAC,UAAU,CAAC,CAErC"}

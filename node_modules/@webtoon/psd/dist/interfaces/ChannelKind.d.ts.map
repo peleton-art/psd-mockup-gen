@@ -1,0 +1,1 @@
+{"version":3,"file":"ChannelKind.d.ts","sourceRoot":"","sources":["../../src/interfaces/ChannelKind.ts"],"names":[],"mappings":"AAMA,oBAAY,WAAW;IACrB,GAAG,IAAI;IACP,KAAK,IAAI;IACT,IAAI,IAAI;IACR,gBAAgB,KAAK;IACrB,qBAAqB,KAAK;IAC1B,yBAAyB,KAAK;CAC/B;AAED,wBAAgB,oBAAoB,CAAC,WAAW,EAAE,WAAW,GAAG,CAAC,GAAG,CAAC,GAAG,CAAC,GAAG,CAAC,CAa5E"}

@@ -1,0 +1,1 @@
+{"version":3,"file":"ParsingResult.d.ts","sourceRoot":"","sources":["../../src/interfaces/ParsingResult.ts"],"names":[],"mappings":"AAIA,OAAO,EACL,iBAAiB,EACjB,gBAAgB,EAChB,qBAAqB,EACrB,8BAA8B,EAC/B,MAAM,aAAa,CAAC;AAErB,MAAM,WAAW,aAAa;IAC5B,UAAU,EAAE,iBAAiB,CAAC;IAE9B,aAAa,EAAE,SAAS,CAAC;IACzB,cAAc,EAAE,qBAAqB,CAAC;IACtC,gBAAgB,EAAE,8BAA8B,CAAC;IACjD,SAAS,EAAE,gBAAgB,CAAC;CAC7B"}

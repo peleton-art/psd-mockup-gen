@@ -1,0 +1,1 @@
+{"version":3,"file":"ChannelBytes.d.ts","sourceRoot":"","sources":["../../src/interfaces/ChannelBytes.ts"],"names":[],"mappings":"AAIA,OAAO,EAAC,kBAAkB,EAAC,MAAM,sBAAsB,CAAC;AAExD;;GAEG;AACH,MAAM,WAAW,YAAY;IAC3B,WAAW,EAAE,kBAAkB,CAAC;IAChC,IAAI,EAAE,UAAU,CAAC;CAClB"}

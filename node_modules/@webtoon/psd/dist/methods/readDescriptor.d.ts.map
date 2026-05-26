@@ -1,0 +1,1 @@
+{"version":3,"file":"readDescriptor.d.ts","sourceRoot":"","sources":["../../src/methods/readDescriptor.ts"],"names":[],"mappings":"AAIA,OAAO,EACL,UAAU,EAMV,mBAAmB,EACpB,MAAM,eAAe,CAAC;AACvB,OAAO,EACL,MAAM,EAMP,MAAM,UAAU,CAAC;AAElB;;;GAGG;AACH,wBAAgB,cAAc,CAAC,MAAM,EAAE,MAAM,GAAG,UAAU,CAoBzD;AAED;;GAEG;AACH,wBAAgB,uBAAuB,CAAC,MAAM,EAAE,MAAM,GAAG,mBAAmB,CAW3E"}

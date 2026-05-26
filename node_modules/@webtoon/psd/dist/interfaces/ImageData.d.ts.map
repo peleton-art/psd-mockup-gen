@@ -1,0 +1,1 @@
+{"version":3,"file":"ImageData.d.ts","sourceRoot":"","sources":["../../src/interfaces/ImageData.ts"],"names":[],"mappings":"AAIA,OAAO,EAAC,YAAY,EAAC,MAAM,gBAAgB,CAAC;AAE5C;;;GAGG;AACH,MAAM,WAAW,SAAS;IACxB,GAAG,EAAE,YAAY,CAAC;IAClB,KAAK,CAAC,EAAE,YAAY,CAAC;IACrB,IAAI,CAAC,EAAE,YAAY,CAAC;IACpB,KAAK,CAAC,EAAE,YAAY,CAAC;CACtB"}
