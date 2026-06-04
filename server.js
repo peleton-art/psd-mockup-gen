@@ -5,12 +5,39 @@ import Psd from '@webtoon/psd';
 import JSZip from 'jszip';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { tmpdir } from 'os';
+import { randomUUID } from 'crypto';
+import { mkdirSync, statSync, existsSync, createReadStream, createWriteStream, rmSync } from 'fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 200 * 1024 * 1024 } });
 
-app.use(express.static(join(__dirname, 'public')));
+// Where chunk zips are staged on disk, and the per-chunk size budget.
+const JOBS_DIR    = join(tmpdir(), 'mockup-jobs');
+const CHUNK_BYTES = 1024 * 1024 * 1024; // ~1 GB of mockups per zip
+const JOB_TTL_MS  = 60 * 60 * 1000;     // delete a job's files 1h after creation
+
+// In-flight + finished jobs, polled by the client for progress/ETA.
+// jobId -> { total, done, chunks, errors, finished, error }
+const jobs = new Map();
+
+// Stream a JSZip to disk so we never hold a whole >2GB buffer in memory.
+function writeZipToFile(zip, filePath) {
+  return new Promise((resolve, reject) => {
+    zip.generateNodeStream({ type: 'nodebuffer', streamFiles: true })
+      .pipe(createWriteStream(filePath))
+      .on('finish', resolve)
+      .on('error', reject);
+  });
+}
+
+// no-store: prevent the browser from serving a stale cached index.html
+app.use(express.static(join(__dirname, 'public'), {
+  etag: false,
+  lastModified: false,
+  setHeaders: res => res.setHeader('Cache-Control', 'no-store'),
+}));
 
 const BLEND = {
   'norm': 'over', 'diss': 'over',
@@ -225,19 +252,50 @@ app.post('/generate', upload.fields([
   { name: 'psds', maxCount: 50 },
   { name: 'images', maxCount: 200 },
 ]), async (req, res) => {
-  try {
-    const psdFiles = req.files?.psds || [];
-    const imgFiles = req.files?.images || [];
-    const format   = req.body?.format === 'png' ? 'png' : 'jpg';
-    const quality  = Math.min(100, Math.max(1, parseInt(req.body?.quality || '90')));
+  const psdFiles = req.files?.psds || [];
+  const imgFiles = req.files?.images || [];
+  const format   = req.body?.format === 'png' ? 'png' : 'jpg';
+  const quality  = Math.min(100, Math.max(1, parseInt(req.body?.quality || '90')));
 
-    if (!psdFiles.length || !imgFiles.length) {
-      return res.status(400).json({ error: 'Upload mindst én PSD og ét billede' });
-    }
+  if (!psdFiles.length || !imgFiles.length) {
+    return res.status(400).json({ error: 'Upload mindst én PSD og ét billede' });
+  }
 
-    const zip    = new JSZip();
-    const errors = [];
+  // Register the job and respond immediately; the client polls /progress for ETA.
+  const jobId  = randomUUID();
+  const jobDir = join(JOBS_DIR, jobId);
+  mkdirSync(jobDir, { recursive: true });
+  const job = { total: psdFiles.length * imgFiles.length, done: 0, chunks: [], errors: [], finished: false, error: null };
+  jobs.set(jobId, job);
+  setTimeout(() => { jobs.delete(jobId); rmSync(jobDir, { recursive: true, force: true }); }, JOB_TTL_MS).unref();
 
+  res.json({ jobId, total: job.total });
+
+  // Process in the background, updating job.done after each mockup.
+  generateMockups(job, jobDir, psdFiles, imgFiles, format, quality)
+    .catch(err => { console.error(err); job.error = err.message; })
+    .finally(() => { job.finished = true; });
+});
+
+async function generateMockups(job, jobDir, psdFiles, imgFiles, format, quality) {
+  const errors = job.errors;
+
+  let zip        = new JSZip();
+  let chunkBytes = 0;
+  let chunkIndex = 0;
+
+  // Finalize the current zip to disk and start a fresh one.
+  async function flushChunk() {
+    if (chunkBytes === 0) return;
+    chunkIndex++;
+    const name = `mockups_part${chunkIndex}.zip`;
+    await writeZipToFile(zip, join(jobDir, name));
+    job.chunks.push({ name, size: statSync(join(jobDir, name)).size });
+    zip = new JSZip();
+    chunkBytes = 0;
+  }
+
+  {
     for (const psdFile of psdFiles) {
       let psd;
       try {
@@ -312,22 +370,47 @@ app.post('/generate', upload.fields([
           .toBuffer();
 
           zip.file(outName, result);
+          chunkBytes += result.length;
+          if (chunkBytes >= CHUNK_BYTES) await flushChunk();
         } catch (err) {
           errors.push(`${imgBase}_${psdBase}.${format}: ${err.message}`);
+        } finally {
+          job.done++;
         }
       }
+
+      // Release this PSD's source buffer so memory doesn't grow across PSDs.
+      psdFile.buffer = null;
     }
 
-    const zipBuf = await zip.generateAsync({ type: 'nodebuffer' });
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', 'attachment; filename="mockups.zip"');
-    if (errors.length) res.setHeader('X-Errors', JSON.stringify(errors).slice(0, 2000));
-    res.send(zipBuf);
-
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    await flushChunk(); // write any remaining mockups
   }
+}
+
+// Progress + result manifest for a job. Polled by the client to show ETA.
+app.get('/progress/:jobId', (req, res) => {
+  const job = jobs.get(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'Job ikke fundet' });
+  res.json({
+    total: job.total, done: job.done,
+    finished: job.finished, error: job.error,
+    chunks: job.finished ? job.chunks : [],
+    errors: job.finished ? job.errors : [],
+  });
+});
+
+// Serve a single chunk zip. res.end (via stream pipe) avoids ETag hashing.
+app.get('/download/:jobId/:name', (req, res) => {
+  const { jobId, name } = req.params;
+  if (!/^[0-9a-f-]{36}$/i.test(jobId) || !/^mockups_part\d+\.zip$/.test(name)) {
+    return res.status(400).end();
+  }
+  const file = join(JOBS_DIR, jobId, name);
+  if (!existsSync(file)) return res.status(404).end();
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
+  res.setHeader('Content-Length', statSync(file).size);
+  createReadStream(file).pipe(res);
 });
 
 app.listen(3001, () => console.log('Mockup Generator → http://localhost:3001'));

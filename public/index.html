@@ -33,8 +33,9 @@ input[type="file"] { display: none; }
 .bar-fill { background: #007aff; height: 100%; width: 0%; transition: width 0.3s; border-radius: 999px; }
 #status-text { font-size: 13px; color: #6e6e73; }
 .error-item { font-size: 12px; color: #ff3b30; margin-top: 4px; }
-#download-btn { display: none; width: 100%; padding: 15px; background: #34c759; color: white; border: none; border-radius: 14px; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 12px; }
-#download-btn:hover { background: #28a745; }
+#download-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.dl-part { width: 100%; padding: 15px; background: #34c759; color: white; border: none; border-radius: 14px; font-size: 16px; font-weight: 600; cursor: pointer; }
+.dl-part:hover { background: #28a745; }
 </style>
 </head>
 <body>
@@ -70,8 +71,8 @@ input[type="file"] { display: none; }
   <div class="settings" id="quality-row">
     <label>JPG kvalitet</label>
     <select id="quality">
-      <option value="100">100% — Maksimal</option>
-      <option value="90" selected>90% — Høj</option>
+      <option value="100" selected>100% — Maksimal</option>
+      <option value="90">90% — Høj</option>
       <option value="80">80% — Medium</option>
       <option value="70">70% — Lav</option>
     </select>
@@ -84,7 +85,7 @@ input[type="file"] { display: none; }
     <div id="status-text">Behandler...</div>
     <div id="error-list"></div>
   </div>
-  <button id="download-btn">Download ZIP</button>
+  <div id="download-list"></div>
 </div>
 
 <script>
@@ -134,9 +135,10 @@ document.getElementById('generate-btn').addEventListener('click', async () => {
 
   btn.disabled = true;
   section.style.display = 'block';
-  document.getElementById('download-btn').style.display = 'none';
+  document.getElementById('download-list').innerHTML = '';
   errList.innerHTML = '';
   bar.style.width = '0%';
+  bar.style.background = '#007aff';
 
   const total = state.psds.length * state.images.length;
   status.textContent = `Sender ${state.psds.length} PSD(er) og ${state.images.length} billede(r) til serveren...`;
@@ -147,39 +149,69 @@ document.getElementById('generate-btn').addEventListener('click', async () => {
   form.append('format',  document.getElementById('format').value);
   form.append('quality', document.getElementById('quality').value);
 
+  document.getElementById('download-list').innerHTML = '';
+
   try {
-    // Animate bar while waiting
-    let fake = 0;
-    const fakeTimer = setInterval(() => {
-      fake = Math.min(fake + 1, 90);
-      bar.style.width = fake + '%';
-    }, 300);
-
     const resp = await fetch('/generate', { method: 'POST', body: form });
-
-    clearInterval(fakeTimer);
-
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({ error: resp.statusText }));
       throw new Error(err.error || resp.statusText);
     }
+    const { jobId } = await resp.json();
 
-    const errors = resp.headers.get('X-Errors');
-    if (errors) {
-      JSON.parse(errors).forEach(e => {
-        errList.innerHTML += `<div class="error-item">⚠ ${e}</div>`;
+    // Poll progress and show a live ETA based on the measured rate.
+    const t0 = Date.now();
+    await new Promise((resolve, reject) => {
+      const poll = async () => {
+        let p;
+        try {
+          const r = await fetch('/progress/' + jobId);
+          if (!r.ok) throw new Error('Mistede forbindelsen til serveren');
+          p = await r.json();
+        } catch (e) { return reject(e); }
+
+        bar.style.width = (p.total ? Math.round(p.done / p.total * 100) : 0) + '%';
+
+        const elapsed = (Date.now() - t0) / 1000;
+        if (p.done > 0 && !p.finished) {
+          const remaining = (p.total - p.done) * (elapsed / p.done);
+          status.textContent = `Genererer ${p.done} / ${p.total} mockups — ca. ${fmtTime(remaining)} tilbage`;
+        } else if (!p.finished) {
+          status.textContent = `Sender filer og forbereder ${p.total} mockups...`;
+        }
+
+        if (p.error) return reject(new Error(p.error));
+        if (p.finished) return resolve(p);
+        setTimeout(poll, 500);
+      };
+      poll();
+    }).then(p => {
+      bar.style.width = '100%';
+      (p.errors || []).forEach(e => { errList.innerHTML += `<div class="error-item">⚠ ${e}</div>`; });
+
+      if (!p.chunks.length) {
+        status.textContent = 'Ingen mockups blev genereret — se fejl ovenfor.';
+        return;
+      }
+      const parts = p.chunks.length;
+      status.textContent = `Færdig — ${p.done} mockups i ${parts} ZIP-fil${parts > 1 ? 'er' : ''}.`;
+
+      const list = document.getElementById('download-list');
+      p.chunks.forEach((c, i) => {
+        const b = document.createElement('button');
+        b.className = 'dl-part';
+        b.textContent = parts > 1
+          ? `Download del ${i + 1}/${parts} (${(c.size / 1024 / 1024).toFixed(0)} MB)`
+          : `Download ZIP (${(c.size / 1024 / 1024).toFixed(0)} MB)`;
+        b.onclick = () => {
+          const a = document.createElement('a');
+          a.href = `/download/${jobId}/${c.name}`;
+          a.download = c.name;
+          a.click();
+        };
+        list.appendChild(b);
       });
-    }
-
-    bar.style.width = '100%';
-    status.textContent = `Færdig — ${total} mockups genereret.`;
-
-    const blob = await resp.blob();
-    const url  = URL.createObjectURL(blob);
-    const dl   = document.getElementById('download-btn');
-    dl.style.display = 'block';
-    dl.textContent = `Download ZIP (${total} filer)`;
-    dl.onclick = () => { const a = document.createElement('a'); a.href = url; a.download = 'mockups.zip'; a.click(); };
+    });
 
   } catch (err) {
     status.textContent = 'Fejl: ' + err.message;
@@ -188,6 +220,13 @@ document.getElementById('generate-btn').addEventListener('click', async () => {
     btn.disabled = false;
   }
 });
+
+function fmtTime(s) {
+  s = Math.ceil(s);
+  if (s < 60) return s + ' sek';
+  const m = Math.floor(s / 60), r = s % 60;
+  return r ? `${m} min ${r} sek` : `${m} min`;
+}
 </script>
 </body>
 </html>
