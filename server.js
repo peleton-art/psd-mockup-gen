@@ -257,6 +257,13 @@ app.post('/generate', upload.fields([
   const format   = req.body?.format === 'png' ? 'png' : 'jpg';
   const quality  = Math.min(100, Math.max(1, parseInt(req.body?.quality || '90')));
 
+  // multer/busboy decodes multipart filenames as latin1, turning UTF-8 bytes into
+  // mojibake (e.g. "ø" → "Ã¸"). Re-interpret as UTF-8 so Danish characters survive
+  // into the output folder/file names. A no-op for ASCII names.
+  for (const f of [...psdFiles, ...imgFiles]) {
+    f.originalname = Buffer.from(f.originalname, 'latin1').toString('utf8');
+  }
+
   if (!psdFiles.length || !imgFiles.length) {
     return res.status(400).json({ error: 'Upload mindst én PSD og ét billede' });
   }
